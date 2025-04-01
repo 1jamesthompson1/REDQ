@@ -1,0 +1,21 @@
+[project]
+name = "redq"
+version = "0.1.0"
+description = "My copy of the original implementation for replication"
+authors = [
+    {name = "James",email = "1jamesthompson1@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch (>=2.6.0,<3.0.0)",
+    "torchvision (>=0.21.0,<0.22.0)",
+    "joblib (>=1.4.2,<2.0.0)",
+    "gymnasium[mujoco] (>=1.1.1,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

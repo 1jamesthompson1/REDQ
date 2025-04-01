@@ -1,3 +1,12 @@
+# Personal copy of REDQ
+
+This is a copy of the author implementation used for my own experiments in line with my project: https://github.com/1jamesthompson1/AIML440_report.
+
+I ahve updated it so that it works with modern gym verison and v5 environments as well as move the dep management over to poetry. 
+
+Furthermore I changed the output and tracking of training evaluation to be more in line with what I would like.
+
+
 # REDQ source code
 Author's PyTorch implementation of Randomized Ensembled Double Q-Learning (REDQ) algorithm. Paper link: https://arxiv.org/abs/2101.05982
 

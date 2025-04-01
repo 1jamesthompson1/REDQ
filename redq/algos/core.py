@@ -262,11 +262,12 @@ def test_agent(agent, test_env, max_ep_len, logger, n_eval=1):
     """
     ep_return_list = np.zeros(n_eval)
     for j in range(n_eval):
-        o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-        while not (d or (ep_len == max_ep_len)):
+        (o, _), r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
+        while not d:
             # Take deterministic actions at test time
             a = agent.get_test_action(o)
-            o, r, d, _ = test_env.step(a)
+            o, r, term, trun, _ = test_env.step(a)
+            d = term or trun
             ep_ret += r
             ep_len += 1
         ep_return_list[j] = ep_ret

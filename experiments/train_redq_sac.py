@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 import time
@@ -15,7 +15,7 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
              # following are agent related hyperparameters
              hidden_sizes=(256, 256), replay_size=int(1e6), batch_size=256,
              lr=3e-4, gamma=0.99, polyak=0.995,
-             alpha=0.2, auto_alpha=True, target_entropy='mbpo',
+             alpha=0.2, auto_alpha=True, target_entropy='auto',
              start_steps=5000, delay_update_steps='auto',
              utd_ratio=20, num_Q=10, num_min=2, q_target_mode='min',
              policy_update_delay=20,
@@ -84,13 +84,13 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
         bias_eval_env_seed = (seed + 20000 + seed_shift) % mod_value
         torch.manual_seed(env_seed)
         np.random.seed(env_seed)
-        env.seed(env_seed)
-        env.action_space.np_random.seed(env_seed)
-        test_env.seed(test_env_seed)
-        test_env.action_space.np_random.seed(test_env_seed)
-        bias_eval_env.seed(bias_eval_env_seed)
-        bias_eval_env.action_space.np_random.seed(bias_eval_env_seed)
+        env.action_space.seed(env_seed)
+        test_env.action_space.seed(test_env_seed)
+        bias_eval_env.action_space.seed(bias_eval_env_seed)
     seed_all(epoch=0)
+
+    test_env.reset(seed=seed)
+    bias_eval_env.reset(seed=seed)
 
     """prepare to init agent"""
     # get obs and action dimensions
@@ -116,23 +116,23 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
                  utd_ratio, num_Q, num_min, q_target_mode,
                  policy_update_delay)
 
-    o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+    (o, _), d, ep_ret, ep_len = env.reset(seed=seed), False, 0, 0
 
     for t in range(total_steps):
         # get action from agent
         a = agent.get_exploration_action(o, env)
         # Step the env, get next observation, reward and done signal
-        o2, r, d, _ = env.step(a)
+        o2, r, term, trun, _ = env.step(a)
+        d = term or trun
 
         # Very important: before we let agent store this transition,
         # Ignore the "done" signal if it comes from hitting the time
         # horizon (that is, when it's an artificial terminal signal
         # that isn't based on the agent's state)
         ep_len += 1
-        d = False if ep_len == max_ep_len else d
 
         # give new data to agent
-        agent.store_data(o, a, r, o2, d)
+        agent.store_data(o, a, r, o2, term)
         # let agent update
         agent.train(logger)
         # set obs to next obs
@@ -140,11 +140,11 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
         ep_ret += r
 
 
-        if d or (ep_len == max_ep_len):
+        if d:
             # store episode return and length to logger
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             # reset environment
-            o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+            (o, _), d, ep_ret, ep_len = env.reset(), False, 0, 0
 
         # End of epoch wrap-up
         if (t+1) % steps_per_epoch == 0:
@@ -193,7 +193,7 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='Hopper-v2')
+    parser.add_argument('--env', type=str, default='Hopper-v5')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=-1) # -1 means use mbpo epochs
     parser.add_argument('--exp_name', type=str, default='redq_sac')
