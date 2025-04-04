@@ -66,7 +66,9 @@ class Logger:
             print("Warning: Log dir %s already exists! Storing info there anyway."%self.output_dir)
         else:
             os.makedirs(self.output_dir)
-        self.output_file = open(osp.join(self.output_dir, output_fname), 'w')
+        os.makedirs(osp.join(self.output_dir, 'exp_log'), exist_ok=True)
+        os.makedirs(osp.join(self.output_dir, 'training_evaluations'), exist_ok=True)
+        self.output_file = open(osp.join(self.output_dir, 'exp_log', output_fname), 'w')
         atexit.register(self.output_file.close)
         print(colorize("Logging data to %s"%self.output_file.name, 'green', bold=True))
         self.first_row=True
@@ -116,7 +118,7 @@ class Logger:
         output = json.dumps(config_json, separators=(',',':\t'), indent=4, sort_keys=True)
         print(colorize('Saving config:\n', color='cyan', bold=True))
         print(output)
-        with open(osp.join(self.output_dir, "config.json"), 'w') as out:
+        with open(osp.join(self.output_dir, 'exp_log', f"{self.exp_name}_config.json"), 'w') as out:
             out.write(output)
 
     def save_state(self, state_dict, itr=None):
@@ -237,7 +239,7 @@ class EpochLogger(Logger):
                 v = v.reshape(-1)
             self.epoch_dict[k].append(v)
 
-    def log_tabular(self, key, val=None, with_min_and_max=False, average_only=False):
+    def log_tabular(self, key, val=None, with_min_and_max=False, average_only=False, clear=True):
         """
         Log a value or possibly the mean/std/min/max values of a diagnostic.
 
@@ -268,7 +270,9 @@ class EpochLogger(Logger):
             if with_min_and_max:
                 super().log_tabular('Max'+key, stats[3])
                 super().log_tabular('Min'+key, stats[2])
-        self.epoch_dict[key] = []
+        
+        if clear:
+            self.epoch_dict[key] = []
 
     def get_stats(self, key):
         """
@@ -277,3 +281,9 @@ class EpochLogger(Logger):
         v = self.epoch_dict[key]
         vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
         return get_statistics_scalar(vals, with_min_and_max=True)
+    
+    def dump_eval(self):
+        """
+        Save the evaluation results to a file.
+        """
+        np.savez(osp.join(self.output_dir, os.path.join('training_evaluations', f'{self.exp_name}.npz')), timesteps=self.epoch_dict['TestEpTimestep'], results=self.epoch_dict['TestEpRet'], ep_lengths=self.epoch_dict['TestEpLen'])

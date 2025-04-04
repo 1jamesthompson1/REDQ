@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import time
 import sys
+import os
 from redq.algos.redq_sac import REDQSACAgent
 from redq.algos.core import mbpo_epoches, test_agent
 from redq.utils.run_utils import setup_logger_kwargs
@@ -11,7 +12,7 @@ from redq.utils.logx import EpochLogger
 
 def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
              max_ep_len=1000, n_evals_per_epoch=1,
-             logger_kwargs=dict(), debug=False,
+             logger_kwargs=dict(), debug=False, n_episodes_per_eval=10,
              # following are agent related hyperparameters
              hidden_sizes=(256, 256), replay_size=int(1e6), batch_size=256,
              lr=3e-4, gamma=0.99, polyak=0.995,
@@ -69,7 +70,7 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
     logger.save_config(locals())
 
     """set up environment and seeding"""
-    env_fn = lambda: gym.make(env_name)
+    env_fn = lambda: gym.make(env_name, max_episode_steps=max_ep_len)
     env, test_env, bias_eval_env = env_fn(), env_fn(), env_fn()
     # seed torch and numpy
     torch.manual_seed(seed)
@@ -151,7 +152,10 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
             epoch = t // steps_per_epoch
 
             # Test the performance of the deterministic version of the agent.
-            test_agent(agent, test_env, max_ep_len, logger) # add logging here
+            test_agent(agent, test_env, max_ep_len, logger, n_eval=n_episodes_per_eval) # add logging here
+            logger.store(TestEpTimestep=t+1)
+            logger.dump_eval()
+
             if evaluate_bias:
                 log_bias_evaluation(bias_eval_env, agent, logger, max_ep_len, alpha, gamma, n_mc_eval, n_mc_cutoff)
 
@@ -166,8 +170,8 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
             logger.log_tabular('Time', time.time()-start_time)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('TestEpRet', with_min_and_max=True)
-            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True, clear=False)
+            logger.log_tabular('TestEpLen', average_only=True, clear=False)
             logger.log_tabular('Q1Vals', with_min_and_max=True)
             logger.log_tabular('LossQ1', average_only=True)
             logger.log_tabular('LogPi', with_min_and_max=True)
@@ -190,23 +194,32 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
             # flush logged information to disk
             sys.stdout.flush()
 
+    # Save the model parameters
+    agent_path = os.path.join(logger.output_dir, 'models', logger.exp_name)
+    if not os.path.exists(agent_path):
+        os.makedirs(agent_path)
+    agent.save_models(agent_path)
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='Hopper-v5')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=-1) # -1 means use mbpo epochs
-    parser.add_argument('--exp_name', type=str, default='redq_sac')
+    parser.add_argument('--exp_name', type=str, default='redq')
     parser.add_argument('--data_dir', type=str, default='../data/')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     # modify the code here if you want to use a different naming scheme
-    exp_name_full = args.exp_name + '_%s' % args.env
+    exp_name_full = f"{args.exp_name}_{args.env}_{args.epochs*1000}_{args.seed}"
 
     # specify experiment name, seed and data_dir.
-    # for example, for seed 0, the progress.txt will be saved under data_dir/exp_name/exp_name_s0
-    logger_kwargs = setup_logger_kwargs(exp_name_full, args.seed, args.data_dir)
+    logger_kwargs = {
+        'output_dir': f"{args.data_dir}",
+        'output_fname': f"{exp_name_full}_progress.txt",
+        'exp_name': exp_name_full,
+    }
 
     redq_sac(args.env, seed=args.seed, epochs=args.epochs,
              logger_kwargs=logger_kwargs, debug=args.debug)

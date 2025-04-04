@@ -261,6 +261,7 @@ def test_agent(agent, test_env, max_ep_len, logger, n_eval=1):
     :return: test return for each episode as a numpy array
     """
     ep_return_list = np.zeros(n_eval)
+    ep_len_list = np.zeros(n_eval)
     for j in range(n_eval):
         (o, _), r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
         while not d:
@@ -271,6 +272,8 @@ def test_agent(agent, test_env, max_ep_len, logger, n_eval=1):
             ep_ret += r
             ep_len += 1
         ep_return_list[j] = ep_ret
-        if logger is not None:
-            logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
-    return ep_return_list
+        ep_len_list[j] = ep_len
+    if logger is not None:
+        logger.store(TestEpRet=ep_return_list, TestEpLen=ep_len_list)
+
+    return ep_return_list, ep_len_list

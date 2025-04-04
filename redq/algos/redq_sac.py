@@ -259,3 +259,16 @@ class REDQSACAgent(object):
         if num_update == 0:
             logger.store(LossPi=0, LossQ1=0, LossAlpha=0, Q1Vals=0, Alpha=0, LogPi=0, PreTanh=0)
 
+
+    def save_models(self, save_dir):
+        """
+        Save the model parameters to the specified directory.
+        :param save_dir: Directory to save the models.
+        """
+        torch.save(self.policy_net.state_dict(), f"{save_dir}/policy_net.pth")
+        for i, q_net in enumerate(self.q_net_list):
+            torch.save(q_net.state_dict(), f"{save_dir}/q_net_{i}.pth")
+        for i, q_target_net in enumerate(self.q_target_net_list):
+            torch.save(q_target_net.state_dict(), f"{save_dir}/q_target_net_{i}.pth")
+        torch.save(self.log_alpha, f"{save_dir}/log_alpha.pth")
+        print(f"Models saved to {save_dir}")
