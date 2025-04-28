@@ -106,6 +106,10 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
     start_time = time.time()
     # flush logger (optional)
     sys.stdout.flush()
+
+    intermediate_path = os.path.join(logger.output_dir, 'intermediate_models', logger.exp_name)
+    if not os.path.exists(intermediate_path):
+        os.makedirs(intermediate_path)
     #################################################################################################
 
     """init agent and start training"""
@@ -155,6 +159,10 @@ def redq_sac(env_name, seed=0, epochs='mbpo', steps_per_epoch=1000,
             test_agent(agent, test_env, max_ep_len, logger, n_eval=n_episodes_per_eval) # add logging here
             logger.store(TestEpTimestep=t+1)
             logger.dump_eval()
+            # Store agent so that the trial can be interrupted and resumed
+            # (e.g. due to time constraints on cluster compute nodes).
+
+            agent.save_models(intermediate_path)
 
             if evaluate_bias:
                 log_bias_evaluation(bias_eval_env, agent, logger, max_ep_len, alpha, gamma, n_mc_eval, n_mc_cutoff)
