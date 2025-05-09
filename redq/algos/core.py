@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.distributions import Distribution, Normal
+import os # Ensure os is imported
+import json # For saving metadata
+
 # following SAC authors' and OpenAI implementation
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
@@ -68,6 +71,68 @@ class ReplayBuffer:
                     done=self.done_buf[idxs],
                     idxs=idxs)
 
+    def save(self, save_dir):
+        """Saves the replay buffer state to compressed .npz files in a 'replay_buffer' subdirectory."""
+        buffer_subdir = os.path.join(save_dir, 'replay_buffer') # Define the subdirectory path
+        if not os.path.exists(buffer_subdir):
+            os.makedirs(buffer_subdir)
+
+        # Save large numpy arrays individually using savez_compressed
+        # Each file will contain one array named 'data'
+        np.savez_compressed(os.path.join(buffer_subdir, 'obs1_buf.npz'), data=self.obs1_buf)
+        np.savez_compressed(os.path.join(buffer_subdir, 'obs2_buf.npz'), data=self.obs2_buf)
+        np.savez_compressed(os.path.join(buffer_subdir, 'acts_buf.npz'), data=self.acts_buf)
+        np.savez_compressed(os.path.join(buffer_subdir, 'rews_buf.npz'), data=self.rews_buf)
+        np.savez_compressed(os.path.join(buffer_subdir, 'done_buf.npz'), data=self.done_buf)
+
+        # Save metadata (ptr, size, max_size) inside the subdirectory
+        metadata = {
+            'ptr': self.ptr,
+            'size': self.size,
+            'max_size': self.max_size
+        }
+        metadata_path = os.path.join(buffer_subdir, 'metadata.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f)
+
+        print(f"Replay buffer saved compressed to directory {buffer_subdir}")
+
+    def load(self, load_dir):
+        """Loads the replay buffer state from compressed .npz files in a 'replay_buffer' subdirectory."""
+        buffer_subdir = os.path.join(load_dir, 'replay_buffer') # Define the subdirectory path
+        # Load metadata from the subdirectory
+        metadata_path = os.path.join(buffer_subdir, 'metadata.json')
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        except FileNotFoundError:
+            print(f"Error: Metadata file not found at {metadata_path}")
+            raise
+        except json.JSONDecodeError:
+            print(f"Error: Could not decode JSON from {metadata_path}")
+            raise
+
+        # Load large numpy arrays individually from compressed .npz files
+        # Need to access the array using the key 'data'
+        self.obs1_buf = np.load(os.path.join(buffer_subdir, 'obs1_buf.npz'))['data']
+        self.obs2_buf = np.load(os.path.join(buffer_subdir, 'obs2_buf.npz'))['data']
+        self.acts_buf = np.load(os.path.join(buffer_subdir, 'acts_buf.npz'))['data']
+        self.rews_buf = np.load(os.path.join(buffer_subdir, 'rews_buf.npz'))['data']
+        self.done_buf = np.load(os.path.join(buffer_subdir, 'done_buf.npz'))['data']
+
+        self.ptr = metadata['ptr']
+        self.size = metadata['size']
+
+        # Ensure max_size matches if it was saved, otherwise keep the initialized one
+        if 'max_size' in metadata and metadata['max_size'] != self.max_size:
+             print(f"Warning: Loaded max_size ({metadata['max_size']}) differs from initialized max_size ({self.max_size}). Using loaded value.")
+             self.max_size = metadata['max_size']
+             # Optional: Resize arrays if max_size changed significantly, though this might be complex
+             # depending on how ptr and size relate to the old max_size.
+             # For simplicity, we assume the buffer was initialized with the correct intended max_size.
+
+        # Optional: Check dimensions match obs_dim, act_dim if they are available here
+        print(f"Replay buffer loaded compressed from directory {buffer_subdir}")
 
 class Mlp(nn.Module):
     def __init__(

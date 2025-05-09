@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from redq.algos.core import TanhGaussianPolicy, Mlp, soft_update_model1_with_model2, ReplayBuffer,\
     mbpo_target_entropy_dict
+import os
 
 def get_probabilistic_num_min(num_mins):
     # allows the number of min to be a float
@@ -259,16 +260,89 @@ class REDQSACAgent(object):
         if num_update == 0:
             logger.store(LossPi=0, LossQ1=0, LossAlpha=0, Q1Vals=0, Alpha=0, LogPi=0, PreTanh=0)
 
-
-    def save_models(self, save_dir):
+    def save_models(self, save_dir, epoch, total_steps_so_far):
         """
-        Save the model parameters to the specified directory.
+        Save the model parameters, optimizer states, replay buffer, epoch, and total steps.
         :param save_dir: Directory to save the models.
+        :param epoch: Current epoch number.
+        :param total_steps_so_far: Total environment steps taken so far.
         """
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         torch.save(self.policy_net.state_dict(), f"{save_dir}/policy_net.pth")
+        torch.save(self.policy_optimizer.state_dict(), f"{save_dir}/policy_optimizer.pth")
+
         for i, q_net in enumerate(self.q_net_list):
             torch.save(q_net.state_dict(), f"{save_dir}/q_net_{i}.pth")
+            torch.save(self.q_optimizer_list[i].state_dict(), f"{save_dir}/q_optimizer_{i}.pth")
         for i, q_target_net in enumerate(self.q_target_net_list):
             torch.save(q_target_net.state_dict(), f"{save_dir}/q_target_net_{i}.pth")
-        torch.save(self.log_alpha, f"{save_dir}/log_alpha.pth")
-        print(f"Models saved to {save_dir}")
+
+        if self.auto_alpha:
+            log_alpha_state = {'log_alpha': self.log_alpha}
+            torch.save(log_alpha_state, f"{save_dir}/log_alpha.pth")
+            torch.save(self.alpha_optim.state_dict(), f"{save_dir}/alpha_optimizer.pth")
+
+        # Save replay buffer components to the main save directory
+        replay_buffer_save_path = os.path.join(save_dir, 'replay_buffer') # Subdirectory for buffer parts
+        self.replay_buffer.save(replay_buffer_save_path)
+
+        # Save training state
+        training_state = {
+            'epoch': epoch,
+            'total_steps_so_far': total_steps_so_far,
+            # Potentially save RNG states here if needed for perfect reproducibility
+        }
+        torch.save(training_state, f"{save_dir}/checkpoint_info.pt")
+
+        print(f"Checkpoint saved to {save_dir} (Epoch: {epoch}, Steps: {total_steps_so_far})")
+
+    def load_models(self, load_dir):
+        """
+        Load the model parameters, optimizer states, replay buffer, epoch, and total steps.
+        :param load_dir: Directory to load the models from.
+        :return: Tuple (start_epoch, start_step)
+        """
+        print(f"Loading models and optimizers from {load_dir}...")
+        self.policy_net.load_state_dict(torch.load(f"{load_dir}/policy_net.pth", map_location=self.device))
+        self.policy_optimizer.load_state_dict(torch.load(f"{load_dir}/policy_optimizer.pth", map_location=self.device))
+
+        for i in range(self.num_Q):
+            self.q_net_list[i].load_state_dict(torch.load(f"{load_dir}/q_net_{i}.pth", map_location=self.device))
+            self.q_optimizer_list[i].load_state_dict(torch.load(f"{load_dir}/q_optimizer_{i}.pth", map_location=self.device))
+            self.q_target_net_list[i].load_state_dict(torch.load(f"{load_dir}/q_target_net_{i}.pth", map_location=self.device))
+
+        if self.auto_alpha:
+            log_alpha_state = torch.load(f"{load_dir}/log_alpha.pth", map_location=self.device)
+            self.log_alpha.data.copy_(log_alpha_state['log_alpha'].data)
+            self.alpha_optim.load_state_dict(torch.load(f"{load_dir}/alpha_optimizer.pth", map_location=self.device))
+            self.alpha = self.log_alpha.cpu().exp().item()
+
+        # Load replay buffer components from the subdirectory
+        replay_buffer_load_path = os.path.join(load_dir, 'replay_buffer')
+        try:
+            print(f"Loading replay buffer from {replay_buffer_load_path}...")
+            self.replay_buffer.load(replay_buffer_load_path)
+        except FileNotFoundError:
+            print(f"Warning: Replay buffer directory or essential file not found at {replay_buffer_load_path}. Starting with an empty buffer.")
+        except Exception as e:
+            print(f"Warning: Error loading replay buffer from {replay_buffer_load_path}: {e}. Starting with an empty buffer.")
+
+        # Load training state
+        try:
+            print(f"Loading training state from {load_dir}/checkpoint_info.pt...")
+            training_state = torch.load(f"{load_dir}/checkpoint_info.pt", map_location='cpu') # Load to CPU first
+            start_epoch = training_state['epoch']
+            start_step = training_state['total_steps_so_far']
+            print(f"Resuming from Epoch: {start_epoch}, Step: {start_step}")
+            # Adjust epoch and step for the next iteration
+            # We finished epoch 'start_epoch', so next epoch is start_epoch + 1
+            # We finished step 'start_step', so next step is start_step + 1
+            return start_epoch + 1, start_step + 1
+        except FileNotFoundError:
+            print(f"Warning: Checkpoint info file not found at {load_dir}/checkpoint_info.pt. Starting from epoch 0, step 0.")
+            return 0, 0
+        except Exception as e:
+            print(f"Warning: Error loading checkpoint info: {e}. Starting from epoch 0, step 0.")
+            return 0, 0
